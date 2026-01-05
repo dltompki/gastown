@@ -308,6 +308,7 @@ func createMayorKiroConfig(hqRoot, townRoot string) error {
 
 	// Create mayor agent configuration
 	config := map[string]interface{}{
+		"name":        "mayor",
 		"description": "Gastown Mayor agent - global coordinator",
 		"tools":       []string{"*"},
 		"allowedTools": []string{

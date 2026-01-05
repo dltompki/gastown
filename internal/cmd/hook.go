@@ -323,7 +323,9 @@ func runHookShow(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// findTownRoot finds the Gas Town root directory.
+// findTownRoot finds the Gas Town workspace root directory.
+// It walks up the directory tree looking for town.json either at the root level
+// or in a mayor/ subdirectory. Returns the workspace root path (not the mayor path).
 func findTownRoot() (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -333,8 +335,15 @@ func findTownRoot() (string, error) {
 	// Look for town.json in current directory and parents
 	dir := cwd
 	for {
+		// Check for town.json at root level
 		townConfig := filepath.Join(dir, "town.json")
 		if _, err := os.Stat(townConfig); err == nil {
+			return dir, nil
+		}
+		
+		// Check for town.json in mayor/ subdirectory
+		mayorTownConfig := filepath.Join(dir, "mayor", "town.json")
+		if _, err := os.Stat(mayorTownConfig); err == nil {
 			return dir, nil
 		}
 
