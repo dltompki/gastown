@@ -77,12 +77,12 @@ func (t *Tmux) NewSession(name, workDir string) error {
 }
 
 // EnsureSessionFresh ensures a session is available and healthy.
-// If the session exists but is a zombie (Claude not running), it kills the session first.
+// If the session exists but is a zombie (CLI not running), it kills the session first.
 // This prevents "session already exists" errors when trying to restart dead agents.
 //
 // A session is considered a zombie if:
 // - The tmux session exists
-// - But Claude (node process) is not running in it
+// - But the CLI process is not running in it
 //
 // Returns nil if session was created successfully.
 func (t *Tmux) EnsureSessionFresh(name, workDir string) error {
@@ -95,13 +95,39 @@ func (t *Tmux) EnsureSessionFresh(name, workDir string) error {
 	if exists {
 		// Session exists - check if it's a zombie
 		if !t.IsClaudeRunning(name) {
-			// Zombie session: tmux alive but Claude dead
+			// Zombie session: tmux alive but CLI dead
 			// Kill it so we can create a fresh one
 			if err := t.KillSession(name); err != nil {
 				return fmt.Errorf("killing zombie session: %w", err)
 			}
 		} else {
-			// Session is healthy (Claude running) - nothing to do
+			// Session is healthy (CLI running) - nothing to do
+			return nil
+		}
+	}
+
+	// Create fresh session
+	return t.NewSession(name, workDir)
+}
+
+// EnsureSessionFreshWithCLI ensures a session is available and healthy using CLI abstraction.
+func (t *Tmux) EnsureSessionFreshWithCLI(name, workDir string, processNames []string) error {
+	// Check if session already exists
+	exists, err := t.HasSession(name)
+	if err != nil {
+		return fmt.Errorf("checking session: %w", err)
+	}
+
+	if exists {
+		// Session exists - check if it's a zombie
+		if !t.IsCLIRunning(name, processNames) {
+			// Zombie session: tmux alive but CLI dead
+			// Kill it so we can create a fresh one
+			if err := t.KillSession(name); err != nil {
+				return fmt.Errorf("killing zombie session: %w", err)
+			}
+		} else {
+			// Session is healthy (CLI running) - nothing to do
 			return nil
 		}
 	}
@@ -528,6 +554,8 @@ Run: gt mail inbox
 
 // IsClaudeRunning checks if Claude appears to be running in the session.
 // Only trusts the pane command - UI markers in scrollback cause false positives.
+//
+// Deprecated: Use IsCLIRunning with CLI interface for better abstraction.
 func (t *Tmux) IsClaudeRunning(session string) bool {
 	// Check pane command - Claude runs as node
 	cmd, err := t.GetPaneCommand(session)
@@ -535,6 +563,21 @@ func (t *Tmux) IsClaudeRunning(session string) bool {
 		return false
 	}
 	return cmd == "node"
+}
+
+// IsCLIRunning checks if any of the specified CLI process names are running in the session.
+func (t *Tmux) IsCLIRunning(session string, processNames []string) bool {
+	cmd, err := t.GetPaneCommand(session)
+	if err != nil {
+		return false
+	}
+	
+	for _, processName := range processNames {
+		if cmd == processName {
+			return true
+		}
+	}
+	return false
 }
 
 // WaitForCommand polls until the pane is NOT running one of the excluded commands.

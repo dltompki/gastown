@@ -43,6 +43,11 @@ type TownSettings struct {
 	// Default: "claude"
 	DefaultAgent string `json:"default_agent,omitempty"`
 
+	// DefaultCLI is the CLI type to use by default.
+	// Can be "claude" or "kiro".
+	// Default: "claude"
+	DefaultCLI string `json:"default_cli,omitempty"`
+
 	// Agents defines custom agent configurations or overrides.
 	// Keys are agent names that can be referenced by DefaultAgent or rig settings.
 	// Values override or extend the built-in presets.
@@ -56,6 +61,7 @@ func NewTownSettings() *TownSettings {
 		Type:         "town-settings",
 		Version:      CurrentTownSettingsVersion,
 		DefaultAgent: "claude",
+		DefaultCLI:   "claude",
 		Agents:       make(map[string]*RuntimeConfig),
 	}
 }

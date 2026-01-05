@@ -1,0 +1,6 @@
+{
+  "type": "town-settings",
+  "version": 1,
+  "default_agent": "claude",
+  "default_cli": "kiro"
+}

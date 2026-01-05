@@ -30,6 +30,7 @@ var (
 	installGit        bool
 	installGitHub     string
 	installPublic     bool
+	installCLI        string
 )
 
 var installCmd = &cobra.Command{
@@ -69,6 +70,7 @@ func init() {
 	installCmd.Flags().BoolVar(&installGit, "git", false, "Initialize git with .gitignore")
 	installCmd.Flags().StringVar(&installGitHub, "github", "", "Create GitHub repo (format: owner/repo, private by default)")
 	installCmd.Flags().BoolVar(&installPublic, "public", false, "Make GitHub repo public (use with --github)")
+	installCmd.Flags().StringVar(&installCLI, "cli", "claude", "AI CLI to use (claude or kiro)")
 	rootCmd.AddCommand(installCmd)
 }
 
@@ -172,20 +174,35 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Printf("   ✓ Created mayor/rigs.json\n")
 
-	// Create Mayor CLAUDE.md at HQ root (Mayor runs from there)
-	if err := createMayorCLAUDEmd(absPath, absPath); err != nil {
-		fmt.Printf("   %s Could not create CLAUDE.md: %v\n", style.Dim.Render("⚠"), err)
+	// Create town settings with CLI configuration
+	townSettings := config.NewTownSettings()
+	townSettings.DefaultCLI = installCLI
+	
+	settingsDir := filepath.Join(absPath, "settings")
+	if err := os.MkdirAll(settingsDir, 0755); err != nil {
+		return fmt.Errorf("creating settings directory: %w", err)
+	}
+	
+	settingsPath := config.TownSettingsPath(absPath)
+	if err := saveTownSettings(settingsPath, townSettings); err != nil {
+		return fmt.Errorf("saving town settings: %w", err)
+	}
+	fmt.Printf("   ✓ Created settings/config.json (CLI: %s)\n", installCLI)
+
+	// Create Mayor CLI configuration at HQ root (Mayor runs from there)
+	if err := createMayorCLIConfig(absPath, absPath); err != nil {
+		fmt.Printf("   %s Could not create CLI configuration: %v\n", style.Dim.Render("⚠"), err)
 	} else {
-		fmt.Printf("   ✓ Created CLAUDE.md\n")
+		fmt.Printf("   ✓ Created CLI configuration\n")
 	}
 
-	// Ensure Mayor has Claude settings with SessionStart hooks.
-	// This ensures gt prime runs on Claude startup, which outputs the Mayor
+	// Ensure Mayor has CLI settings with appropriate hooks.
+	// This ensures gt prime runs on CLI startup, which outputs the Mayor
 	// delegation protocol - critical for preventing direct implementation.
-	if err := claude.EnsureSettingsForRole(absPath, "mayor"); err != nil {
-		fmt.Printf("   %s Could not create .claude/settings.json: %v\n", style.Dim.Render("⚠"), err)
+	if err := ensureMayorCLISettings(absPath); err != nil {
+		fmt.Printf("   %s Could not create CLI settings: %v\n", style.Dim.Render("⚠"), err)
 	} else {
-		fmt.Printf("   ✓ Created .claude/settings.json\n")
+		fmt.Printf("   ✓ Created CLI settings\n")
 	}
 
 	// Initialize town-level beads database (optional)
@@ -226,12 +243,24 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Provision town-level slash commands (.claude/commands/)
-	// All agents inherit these via Claude's directory traversal - no per-workspace copies needed.
-	if err := templates.ProvisionCommands(absPath); err != nil {
-		fmt.Printf("   %s Could not provision slash commands: %v\n", style.Dim.Render("⚠"), err)
-	} else {
-		fmt.Printf("   ✓ Created .claude/commands/ (slash commands for all agents)\n")
+	// Provision CLI-specific commands
+	cliType := config.ResolveCLIType(absPath)
+	if cliType == "claude" {
+		// Provision town-level slash commands (.claude/commands/)
+		// All agents inherit these via Claude's directory traversal - no per-workspace copies needed.
+		if err := templates.ProvisionCommands(absPath); err != nil {
+			fmt.Printf("   %s Could not provision slash commands: %v\n", style.Dim.Render("⚠"), err)
+		} else {
+			fmt.Printf("   ✓ Created .claude/commands/ (slash commands for all agents)\n")
+		}
+	} else if cliType == "kiro" {
+		// Provision Kiro prompts (.kiro/prompts/)
+		// Provides equivalent functionality to Claude's slash commands via @ prompts
+		if err := templates.ProvisionPrompts(absPath); err != nil {
+			fmt.Printf("   %s Could not provision Kiro prompts: %v\n", style.Dim.Render("⚠"), err)
+		} else {
+			fmt.Printf("   ✓ Created .kiro/prompts/ (@ prompts for Gastown workflows)\n")
+		}
 	}
 
 	// Initialize git if requested (--git or --github implies --git)
@@ -257,7 +286,55 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func createMayorCLAUDEmd(hqRoot, townRoot string) error {
+func createMayorCLIConfig(hqRoot, townRoot string) error {
+	// Resolve CLI type for this town
+	cliType := config.ResolveCLIType(townRoot)
+	
+	// Create CLI-specific configuration
+	switch cliType {
+	case "kiro":
+		return createMayorKiroConfig(hqRoot, townRoot)
+	default:
+		return createMayorCLAUDEmd(hqRoot, townRoot)
+	}
+}
+
+func createMayorKiroConfig(hqRoot, townRoot string) error {
+	// Create .kiro/agents/ directory
+	kiroDir := filepath.Join(hqRoot, ".kiro", "agents")
+	if err := os.MkdirAll(kiroDir, 0755); err != nil {
+		return fmt.Errorf("creating .kiro/agents directory: %w", err)
+	}
+
+	// Create mayor agent configuration
+	config := map[string]interface{}{
+		"description": "Gastown Mayor agent - global coordinator",
+		"tools":       []string{"*"},
+		"allowedTools": []string{
+			"fs_read",
+			"fs_write",
+			"execute_bash",
+		},
+		"resources": []string{
+			"file://MAYOR.md", // Kiro uses MAYOR.md instead of CLAUDE.md
+		},
+	}
+
+	configPath := filepath.Join(kiroDir, "mayor.json")
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling mayor config: %w", err)
+	}
+
+	if err := os.WriteFile(configPath, data, 0644); err != nil {
+		return fmt.Errorf("writing mayor config: %w", err)
+	}
+
+	// Create MAYOR.md (Kiro equivalent of CLAUDE.md)
+	return createMayorMD(hqRoot, townRoot, "MAYOR.md")
+}
+
+func createMayorMD(hqRoot, townRoot, filename string) error {
 	tmpl, err := templates.New()
 	if err != nil {
 		return err
@@ -280,8 +357,26 @@ func createMayorCLAUDEmd(hqRoot, townRoot string) error {
 		return err
 	}
 
-	claudePath := filepath.Join(hqRoot, "CLAUDE.md")
-	return os.WriteFile(claudePath, []byte(content), 0644)
+	mdPath := filepath.Join(hqRoot, filename)
+	return os.WriteFile(mdPath, []byte(content), 0644)
+}
+
+func ensureMayorCLISettings(hqRoot string) error {
+	// Resolve CLI type
+	cliType := config.ResolveCLIType(hqRoot)
+	
+	switch cliType {
+	case "kiro":
+		// Kiro CLI settings are handled in agent configuration
+		return nil
+	default:
+		// Use existing Claude settings
+		return claude.EnsureSettingsForRole(hqRoot, "mayor")
+	}
+}
+
+func createMayorCLAUDEmd(hqRoot, townRoot string) error {
+	return createMayorMD(hqRoot, townRoot, "CLAUDE.md")
 }
 
 func writeJSON(path string, data interface{}) error {

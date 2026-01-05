@@ -1,6 +1,6 @@
 # Gas Town
 
-Multi-agent orchestrator for Claude Code. Track work with convoys; sling to agents.
+Multi-agent orchestrator for AI coding assistants. Track work with convoys; sling to agents.
 
 ## Why Gas Town?
 
@@ -17,7 +17,9 @@ Multi-agent orchestrator for Claude Code. Track work with convoys; sling to agen
 - **Git 2.25+** - for worktree support
 - **beads (bd)** - [github.com/steveyegge/beads](https://github.com/steveyegge/beads) - required for issue tracking
 - **tmux 3.0+** - recommended for the full experience (the Mayor session is the primary interface)
-- **Claude Code CLI** - [claude.ai/code](https://claude.ai/code)
+- **AI CLI** - Choose one:
+  - **Claude Code CLI** - [claude.ai/code](https://claude.ai/code) (default)
+  - **Kiro CLI** - [cli.kiro.dev](https://cli.kiro.dev)
 
 ## Quick Start
 
@@ -32,6 +34,9 @@ export PATH="$PATH:$HOME/go/bin"
 gt install ~/gt --git
 cd ~/gt
 
+# Configure AI CLI (optional - defaults to Claude Code)
+gt cli set kiro  # Use Kiro CLI instead of Claude Code
+
 # Add a project
 gt rig add myproject https://github.com/you/repo.git
 
@@ -40,6 +45,53 @@ gt crew add <yourname> --rig myproject
 
 # Start working
 cd myproject/crew/<yourname>
+```
+
+## CLI Compatibility
+
+Gastown works with both Claude Code and Kiro CLI. Choose your preferred AI assistant:
+
+### Configuration
+
+```bash
+# Set global CLI preference
+gt cli set claude    # Use Claude Code (default)
+gt cli set kiro      # Use Kiro CLI
+
+# Check current setting
+gt cli get
+
+# List available CLIs
+gt cli list
+
+# Migrate existing installation
+gt migrate cli kiro
+```
+
+### Supported Features
+
+All Gastown features work identically with both CLIs:
+
+| Feature | Claude Code | Kiro CLI | Notes |
+|---------|-------------|----------|-------|
+| Convoys | ✅ | ✅ | Work tracking |
+| Beads | ✅ | ✅ | Issue management |
+| Formulas | ✅ | ✅ | Structured workflows |
+| Molecules | ✅ | ✅ | Workflow execution |
+| Session Management | ✅ | ✅ | Different mechanisms |
+| Process Monitoring | ✅ | ✅ | CLI-specific detection |
+| Configuration | `.claude/settings.json` | `.kiro/agents/` | Different formats |
+
+### Installation Requirements
+
+**For Claude Code:**
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+```
+
+**For Kiro CLI:**
+```bash
+curl -fsSL https://cli.kiro.dev/install | bash
 ```
 
 For advanced multi-agent coordination, use the Mayor session:

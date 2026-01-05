@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/beads"
@@ -325,10 +325,25 @@ func runHookShow(cmd *cobra.Command, args []string) error {
 
 // findTownRoot finds the Gas Town root directory.
 func findTownRoot() (string, error) {
-	cmd := exec.Command("gt", "root")
-	out, err := cmd.Output()
+	cwd, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(string(out)), nil
+
+	// Look for town.json in current directory and parents
+	dir := cwd
+	for {
+		townConfig := filepath.Join(dir, "town.json")
+		if _, err := os.Stat(townConfig); err == nil {
+			return dir, nil
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break // reached root
+		}
+		dir = parent
+	}
+
+	return "", fmt.Errorf("not in a Gastown workspace (no town.json found)")
 }

@@ -876,3 +876,23 @@ func BuildCrewStartupCommand(rigName, crewName, rigPath, prompt string) string {
 	}
 	return BuildStartupCommand(envVars, rigPath, prompt)
 }
+
+// ResolveCLIType resolves the CLI type to use for a rig.
+// Resolution order:
+//  1. Town's default_cli setting
+//  2. Fall back to "claude" for backwards compatibility
+//
+// townRoot is the path to the town directory (e.g., ~/gt).
+func ResolveCLIType(townRoot string) string {
+	// Load town settings for CLI lookup
+	townSettings, err := LoadOrCreateTownSettings(TownSettingsPath(townRoot))
+	if err != nil {
+		return "claude" // fallback
+	}
+
+	if townSettings.DefaultCLI != "" {
+		return townSettings.DefaultCLI
+	}
+
+	return "claude" // default for backwards compatibility
+}

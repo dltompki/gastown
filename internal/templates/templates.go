@@ -16,6 +16,9 @@ var templateFS embed.FS
 //go:embed commands/*.md
 var commandsFS embed.FS
 
+//go:embed prompts/*.md
+var promptsFS embed.FS
+
 // Templates manages role and message templates.
 type Templates struct {
 	roleTemplates    *template.Template
@@ -242,4 +245,67 @@ func MissingCommands(workspacePath string) ([]string, error) {
 	}
 
 	return missing, nil
+}
+
+// ProvisionPrompts creates the .kiro/prompts/ directory with standard Gastown prompts.
+// This provides Kiro CLI users with equivalent functionality to Claude's slash commands.
+// If a prompt already exists, it is skipped (no overwrite).
+func ProvisionPrompts(workspacePath string) error {
+	entries, err := promptsFS.ReadDir("prompts")
+	if err != nil {
+		return fmt.Errorf("reading prompts directory: %w", err)
+	}
+
+	// Create .kiro/prompts/ directory
+	promptsDir := filepath.Join(workspacePath, ".kiro", "prompts")
+	if err := os.MkdirAll(promptsDir, 0755); err != nil {
+		return fmt.Errorf("creating prompts directory: %w", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		destPath := filepath.Join(promptsDir, entry.Name())
+
+		// Skip if prompt already exists (don't overwrite user customizations)
+		if _, err := os.Stat(destPath); err == nil {
+			continue
+		}
+
+		content, err := promptsFS.ReadFile("prompts/" + entry.Name())
+		if err != nil {
+			return fmt.Errorf("reading %s: %w", entry.Name(), err)
+		}
+
+		if err := os.WriteFile(destPath, content, 0644); err != nil {
+			return fmt.Errorf("writing %s: %w", entry.Name(), err)
+		}
+	}
+
+	return nil
+}
+
+// HasPrompts checks if a workspace has the .kiro/prompts/ directory provisioned.
+func HasPrompts(workspacePath string) bool {
+	promptsDir := filepath.Join(workspacePath, ".kiro", "prompts")
+	info, err := os.Stat(promptsDir)
+	return err == nil && info.IsDir()
+}
+
+// PromptNames returns the list of embedded Kiro prompts.
+func PromptNames() ([]string, error) {
+	entries, err := promptsFS.ReadDir("prompts")
+	if err != nil {
+		return nil, fmt.Errorf("reading prompts directory: %w", err)
+	}
+
+	var names []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			names = append(names, entry.Name())
+		}
+	}
+	return names, nil
 }

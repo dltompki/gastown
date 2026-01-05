@@ -225,7 +225,7 @@ func (c *OrphanSessionCheck) isValidSession(sess string, validRigs []string, may
 	return true
 }
 
-// OrphanProcessCheck detects orphaned Claude/claude-code processes
+// OrphanProcessCheck detects orphaned CLI processes
 // that are not associated with a Gas Town tmux session.
 type OrphanProcessCheck struct {
 	FixableCheck
@@ -238,13 +238,13 @@ func NewOrphanProcessCheck() *OrphanProcessCheck {
 		FixableCheck: FixableCheck{
 			BaseCheck: BaseCheck{
 				CheckName:        "orphan-processes",
-				CheckDescription: "Detect orphaned Claude processes",
+				CheckDescription: "Detect orphaned CLI processes",
 			},
 		},
 	}
 }
 
-// Run checks for orphaned Claude processes.
+// Run checks for orphaned CLI processes.
 func (c *OrphanProcessCheck) Run(ctx *CheckContext) *CheckResult {
 	// Get list of tmux session PIDs
 	tmuxPIDs, err := c.getTmuxSessionPIDs()
@@ -257,30 +257,30 @@ func (c *OrphanProcessCheck) Run(ctx *CheckContext) *CheckResult {
 		}
 	}
 
-	// Find Claude processes
-	claudeProcs, err := c.findClaudeProcesses()
+	// Find CLI processes (both Claude and Kiro)
+	cliProcs, err := c.findCLIProcesses(ctx.TownRoot)
 	if err != nil {
 		return &CheckResult{
 			Name:    c.Name(),
 			Status:  StatusWarning,
-			Message: "Could not list Claude processes",
+			Message: "Could not list CLI processes",
 			Details: []string{err.Error()},
 		}
 	}
 
-	if len(claudeProcs) == 0 {
+	if len(cliProcs) == 0 {
 		return &CheckResult{
 			Name:    c.Name(),
 			Status:  StatusOK,
-			Message: "No Claude processes found",
+			Message: "No CLI processes found",
 		}
 	}
 
-	// Check which Claude processes are orphaned
+	// Check which CLI processes are orphaned
 	var orphans []processInfo
 	var validCount int
 
-	for _, proc := range claudeProcs {
+	for _, proc := range cliProcs {
 		if c.isOrphanProcess(proc, tmuxPIDs) {
 			orphans = append(orphans, proc)
 		} else {
@@ -298,7 +298,7 @@ func (c *OrphanProcessCheck) Run(ctx *CheckContext) *CheckResult {
 		return &CheckResult{
 			Name:    c.Name(),
 			Status:  StatusOK,
-			Message: fmt.Sprintf("All %d Claude processes have valid parents", validCount),
+			Message: fmt.Sprintf("All %d CLI processes have valid parents", validCount),
 		}
 	}
 
@@ -310,7 +310,7 @@ func (c *OrphanProcessCheck) Run(ctx *CheckContext) *CheckResult {
 	return &CheckResult{
 		Name:    c.Name(),
 		Status:  StatusWarning,
-		Message: fmt.Sprintf("Found %d orphaned Claude process(es)", len(orphans)),
+		Message: fmt.Sprintf("Found %d orphaned CLI process(es)", len(orphans)),
 		Details: details,
 		FixHint: "Run 'gt doctor --fix' to kill orphaned processes",
 	}
@@ -460,6 +460,75 @@ func (c *OrphanProcessCheck) getTmuxSessionPIDs() (map[int]bool, error) { //noli
 	}
 
 	return pids, nil
+}
+
+// findCLIProcesses finds all running CLI processes based on configured CLI type.
+func (c *OrphanProcessCheck) findCLIProcesses(townRoot string) ([]processInfo, error) {
+	// Get configured CLI type
+	cliType := "claude" // default
+	if townRoot != "" {
+		// Try to resolve CLI type from configuration
+		// This is a simplified version - in practice would use config.ResolveCLIType
+		settingsPath := filepath.Join(townRoot, "settings", "config.json")
+		if data, err := os.ReadFile(settingsPath); err == nil {
+			// Simple JSON parsing to get CLI type
+			if strings.Contains(string(data), `"default_cli":"kiro"`) {
+				cliType = "kiro"
+			}
+		}
+	}
+
+	// Find processes based on CLI type
+	switch cliType {
+	case "kiro":
+		return c.findKiroProcesses()
+	default:
+		return c.findClaudeProcesses()
+	}
+}
+
+// findKiroProcesses finds all running kiro-cli processes.
+func (c *OrphanProcessCheck) findKiroProcesses() ([]processInfo, error) {
+	var procs []processInfo
+
+	// Use ps to find kiro-cli processes
+	out, err := exec.Command("ps", "-eo", "pid,ppid,comm").Output()
+	if err != nil {
+		return nil, err
+	}
+
+	// Regex to match kiro-cli processes
+	kiroPattern := regexp.MustCompile(`(?i)(^kiro-cli$|/kiro-cli$)`)
+
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			continue
+		}
+
+		cmd := strings.Join(fields[2:], " ")
+
+		// Only match kiro-cli processes
+		if !kiroPattern.MatchString(cmd) {
+			continue
+		}
+
+		var pid, ppid int
+		if _, err := fmt.Sscanf(fields[0], "%d", &pid); err != nil {
+			continue
+		}
+		if _, err := fmt.Sscanf(fields[1], "%d", &ppid); err != nil {
+			continue
+		}
+
+		procs = append(procs, processInfo{
+			pid:  pid,
+			ppid: ppid,
+			cmd:  cmd,
+		})
+	}
+
+	return procs, nil
 }
 
 // findClaudeProcesses finds all running claude/claude-code CLI processes.
